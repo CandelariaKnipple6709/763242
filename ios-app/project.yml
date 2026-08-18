@@ -1,0 +1,52 @@
+# XcodeGen spec — generates a full .xcodeproj from these Swift files
+# without ever needing to open Xcode's UI. Used by the GitHub Actions
+# workflow (.github/workflows/build-ipa.yml) to build a .ipa entirely
+# in the cloud, so a Windows-only setup with no Mac can still produce
+# an installable .ipa for Sideloadly.
+#
+# If you DO have a Mac, you can also just run `xcodegen generate` here
+# yourself (brew install xcodegen) and open the resulting CamSwap.xcodeproj
+# in Xcode instead of manually creating a project.
+
+name: CamSwap
+
+options:
+  bundleIdPrefix: com.camswap
+  deploymentTarget:
+    iOS: "15.0"
+  autogenerateSchemes: true
+
+targets:
+  CamSwap:
+    type: application
+    platform: iOS
+    sources:
+      - path: CamSwapApp.swift
+      - path: ContentView.swift
+      - path: WebViewStore.swift
+      - path: WebViewRepresentable.swift
+      - path: CamswapScript.swift
+      - path: QRScannerView.swift
+    info:
+      path: Generated-Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSMicrophoneUsageDescription: "Микрофон нужен для передачи звука во время трансляции."
+        NSCameraUsageDescription: "Камера нужна для сканирования QR-кода подключения к студии на компьютере."
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.camswap.app
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_IDENTITY: ""
+        DEVELOPMENT_TEAM: ""

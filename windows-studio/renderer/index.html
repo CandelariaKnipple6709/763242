@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<title>camswap studio</title>
+<style>
+  :root { --bg:#111; --panel:#1b1b1b; --border:#333; --accent:#2b6cff; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:#eee; margin:0; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  header h1 { font-size:15px; font-weight:600; margin:0; margin-right:8px; }
+  #status { font-size:12px; padding:6px 10px; border-radius:6px; background:#141414; white-space:nowrap; }
+  #status.ok { color:#7CFC7C; } #status.warn { color:#ffcc66; } #status.err { color:#ff6b6b; }
+
+  main { display:flex; gap:16px; padding:16px; align-items:flex-start; flex-wrap:wrap; }
+
+  .stage-col { display:flex; flex-direction:column; gap:10px; flex:1; min-width:520px; }
+  #stageWrap { position:relative; width:100%; max-width:960px; aspect-ratio:16/9; background:#000; border-radius:8px; overflow:hidden; border:1px solid var(--border); cursor:grab; }
+  #stageWrap.dragging { cursor:grabbing; }
+  #outputCanvas { width:100%; height:100%; display:block; }
+  #dropHint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; color:#666; font-size:14px; pointer-events:none; padding:24px; }
+
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+  .toolbar button { font-size:13px; padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:#141414; color:#eee; cursor:pointer; }
+  .toolbar button:hover { border-color:#555; }
+  .toolbar .sep { width:1px; align-self:stretch; background:var(--border); margin:0 4px; }
+  .toolbar label { font-size:12px; color:#999; display:flex; align-items:center; gap:6px; }
+  .toolbar input[type=range] { width:120px; }
+  .hint { font-size:11px; color:#666; }
+
+  .side-col { display:flex; flex-direction:column; gap:16px; width:260px; }
+
+  .pairing-card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:14px; text-align:center; }
+  .pairing-card h2 { font-size:13px; color:#aaa; margin:0 0 10px 0; font-weight:600; }
+  .pairing-card img { width:100%; max-width:200px; border-radius:8px; background:#fff; padding:8px; }
+  .pairing-card .room-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; color:#ddd; margin-top:8px; word-break:break-all; }
+  .pairing-card button { margin-top:10px; font-size:12px; padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:#141414; color:#eee; cursor:pointer; }
+  .pairing-card button:hover { border-color:#555; }
+
+  details.advanced { background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:12px; }
+  details.advanced summary { cursor:pointer; color:#999; }
+  details.advanced .row { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+  details.advanced label { color:#888; }
+  details.advanced input { font-size:12px; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:#141414; color:#eee; width:100%; }
+  details.advanced button { margin-top:6px; font-size:12px; padding:6px 10px; border-radius:6px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
+
+  .scenes-col h2 { font-size:13px; color:#aaa; margin:0 0 4px 0; font-weight:600; }
+  #sceneList { display:flex; flex-direction:column; gap:8px; max-height:360px; overflow-y:auto; padding-right:2px; }
+  .scene-thumb { position:relative; border:2px solid var(--border); border-radius:8px; overflow:hidden; cursor:pointer; background:#000; aspect-ratio:16/9; }
+  .scene-thumb img { width:100%; height:100%; object-fit:contain; background:#000; display:block; }
+  .scene-thumb.live { border-color:#ff4444; box-shadow:0 0 0 1px #ff4444; }
+  .scene-thumb.selected:not(.live) { border-color:var(--accent); }
+  .scene-thumb .badge { position:absolute; top:4px; left:4px; font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(255,68,68,.9); color:#fff; font-weight:700; letter-spacing:.03em; }
+  .scene-thumb .remove { position:absolute; top:4px; right:4px; width:20px; height:20px; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; border:none; font-size:13px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .scene-thumb .name { position:absolute; bottom:0; left:0; right:0; font-size:10px; padding:3px 6px; background:linear-gradient(transparent,rgba(0,0,0,.75)); color:#ddd; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  #addSceneBtn { width:100%; padding:10px; border-radius:8px; border:1px dashed #555; background:transparent; color:#aaa; cursor:pointer; font-size:13px; margin-top:8px; }
+  #addSceneBtn:hover { border-color:#888; color:#ddd; }
+  #fileInput { display:none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>camswap studio</h1>
+  <div id="status">запуск...</div>
+</header>
+
+<main>
+  <div class="stage-col">
+    <div id="stageWrap">
+      <canvas id="outputCanvas" width="1280" height="720"></canvas>
+      <div id="dropHint">Перетащите изображения сюда<br/>или нажмите «Добавить сцену»</div>
+    </div>
+
+    <div class="toolbar">
+      <button id="rotL">⟲ -90°</button>
+      <button id="rotR">⟳ +90°</button>
+      <button id="flipH">⇋ Отразить гориз.</button>
+      <button id="flipV">⇵ Отразить верт.</button>
+      <div class="sep"></div>
+      <label>Поворот <input id="rotSlider" type="range" min="-180" max="180" value="0" step="1"></label>
+      <label>Масштаб <input id="scaleSlider" type="range" min="10" max="400" value="100" step="1"></label>
+      <div class="sep"></div>
+      <button id="resetTransform">Сбросить</button>
+      <span class="hint">Тащите картинку мышью, колесо мыши — зум</span>
+    </div>
+  </div>
+
+  <div class="side-col">
+    <div class="pairing-card">
+      <h2>Подключение телефона</h2>
+      <img id="qrImg" alt="QR-код для подключения" />
+      <div class="room-code" id="roomCodeText">…</div>
+      <button id="regenBtn">Новый код</button>
+    </div>
+
+    <details class="advanced">
+      <summary>Расширенные настройки (для трансляции не по локальной сети)</summary>
+      <div class="row">
+        <label>Signaling server (переопределить, напр. wss://...ngrok-free.app)</label>
+        <input id="overrideServer" placeholder="оставьте пустым — использовать локальный" />
+        <button id="applyOverride">Применить и переподключить</button>
+      </div>
+    </details>
+
+    <div class="scenes-col">
+      <h2>Сцены (клик — сразу в эфир)</h2>
+      <div id="sceneList"></div>
+      <button id="addSceneBtn">+ Добавить сцену</button>
+      <input id="fileInput" type="file" accept="image/*" multiple />
+    </div>
+  </div>
+</main>
+
+<script src="renderer.js"></script>
+</body>
+</html>

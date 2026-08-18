@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>camswap studio</title>
+<style>
+  :root { --bg:#111; --panel:#1b1b1b; --border:#333; --accent:#2b6cff; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:#eee; margin:0; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  header h1 { font-size:15px; font-weight:600; margin:0; margin-right:8px; }
+  header label { font-size:12px; color:#999; display:block; margin-bottom:2px; }
+  header input { font-size:13px; padding:6px 8px; border-radius:6px; border:1px solid var(--border); background:#141414; color:#eee; min-width:180px; }
+  header button { font-size:13px; padding:7px 14px; border-radius:6px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; font-weight:600; }
+  header button.secondary { background:transparent; border-color:var(--border); }
+  header button:disabled { opacity:.5; cursor:not-allowed; }
+  #status { font-size:12px; padding:6px 10px; border-radius:6px; background:#141414; white-space:nowrap; }
+  #status.ok { color:#7CFC7C; } #status.warn { color:#ffcc66; } #status.err { color:#ff6b6b; }
+
+  main { display:flex; gap:16px; padding:16px; align-items:flex-start; flex-wrap:wrap; }
+
+  .stage-col { display:flex; flex-direction:column; gap:10px; }
+  #stageWrap { position:relative; width:960px; max-width:calc(100vw - 32px); aspect-ratio:16/9; background:#000; border-radius:8px; overflow:hidden; border:1px solid var(--border); cursor:grab; }
+  #stageWrap.dragging { cursor:grabbing; }
+  #outputCanvas { width:100%; height:100%; display:block; }
+  #dropHint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; color:#666; font-size:14px; pointer-events:none; padding:24px; }
+
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+  .toolbar button { font-size:13px; padding:6px 10px; border-radius:6px; border:1px solid var(--border); background:#141414; color:#eee; cursor:pointer; }
+  .toolbar button:hover { border-color:#555; }
+  .toolbar .sep { width:1px; align-self:stretch; background:var(--border); margin:0 4px; }
+  .toolbar label { font-size:12px; color:#999; display:flex; align-items:center; gap:6px; }
+  .toolbar input[type=range] { width:120px; }
+  .hint { font-size:11px; color:#666; }
+
+  .scenes-col { display:flex; flex-direction:column; gap:10px; width:220px; }
+  .scenes-col h2 { font-size:13px; color:#aaa; margin:0 0 4px 0; font-weight:600; }
+  #sceneList { display:flex; flex-direction:column; gap:8px; max-height:640px; overflow-y:auto; padding-right:2px; }
+  .scene-thumb { position:relative; border:2px solid var(--border); border-radius:8px; overflow:hidden; cursor:pointer; background:#000; aspect-ratio:16/9; }
+  .scene-thumb img { width:100%; height:100%; object-fit:contain; background:#000; display:block; }
+  .scene-thumb.live { border-color:#ff4444; box-shadow:0 0 0 1px #ff4444; }
+  .scene-thumb.selected:not(.live) { border-color:var(--accent); }
+  .scene-thumb .badge { position:absolute; top:4px; left:4px; font-size:10px; padding:2px 6px; border-radius:4px; background:rgba(255,68,68,.9); color:#fff; font-weight:700; letter-spacing:.03em; }
+  .scene-thumb .remove { position:absolute; top:4px; right:4px; width:20px; height:20px; border-radius:50%; background:rgba(0,0,0,.6); color:#fff; border:none; font-size:13px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+  .scene-thumb .name { position:absolute; bottom:0; left:0; right:0; font-size:10px; padding:3px 6px; background:linear-gradient(transparent,rgba(0,0,0,.75)); color:#ddd; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  #addSceneBtn { width:100%; padding:10px; border-radius:8px; border:1px dashed #555; background:transparent; color:#aaa; cursor:pointer; font-size:13px; }
+  #addSceneBtn:hover { border-color:#888; color:#ddd; }
+  #fileInput { display:none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>camswap studio</h1>
+  <div>
+    <label>Signaling server</label>
+    <input id="serverUrl" />
+  </div>
+  <div>
+    <label>Комната</label>
+    <input id="roomId" placeholder="stream-1234" />
+  </div>
+  <button id="connectBtn">Начать вещание</button>
+  <button id="disconnectBtn" class="secondary" disabled>Остановить</button>
+  <div id="status">не подключено</div>
+</header>
+
+<main>
+  <div class="stage-col">
+    <div id="stageWrap">
+      <canvas id="outputCanvas" width="1280" height="720"></canvas>
+      <div id="dropHint">Перетащите изображения сюда<br/>или нажмите «Добавить сцену»</div>
+    </div>
+
+    <div class="toolbar">
+      <button id="rotL">⟲ -90°</button>
+      <button id="rotR">⟳ +90°</button>
+      <button id="flipH">⇋ Отразить гориз.</button>
+      <button id="flipV">⇵ Отразить верт.</button>
+      <div class="sep"></div>
+      <label>Поворот <input id="rotSlider" type="range" min="-180" max="180" value="0" step="1"></label>
+      <label>Масштаб <input id="scaleSlider" type="range" min="10" max="400" value="100" step="1"></label>
+      <div class="sep"></div>
+      <button id="resetTransform">Сбросить</button>
+      <span class="hint">Тащите картинку мышью, колесо мыши — зум</span>
+    </div>
+  </div>
+
+  <div class="scenes-col">
+    <h2>Сцены (клик — сразу в эфир)</h2>
+    <div id="sceneList"></div>
+    <button id="addSceneBtn">+ Добавить сцену</button>
+    <input id="fileInput" type="file" accept="image/*" multiple />
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const statusEl = $('status');
+const canvas = $('outputCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+const WIDTH = canvas.width, HEIGHT = canvas.height;
+const stageWrap = $('stageWrap');
+const dropHint = $('dropHint');
+const sceneListEl = $('sceneList');
+
+$('serverUrl').value = (location.protocol === 'https:' ? 'wss://' : 'ws://') + (location.host || 'localhost:8080');
+
+// ---- scene model ---------------------------------------------------------
+// scene: { id, name, img, scale (1 = fit), rotationDeg, flipH, flipV, offsetX, offsetY, fitScale }
+let scenes = [];
+let liveSceneId = null;
+let selectedSceneId = null;
+let nextId = 1;
+
+function fitScaleFor(img) {
+  return Math.min(WIDTH / img.width, HEIGHT / img.height);
+}
+
+function addScene(img, name) {
+  const scene = {
+    id: nextId++,
+    name,
+    img,
+    fitScale: fitScaleFor(img),
+    scale: 1,       // multiplier on top of fitScale
+    rotationDeg: 0,
+    flipH: false,
+    flipV: false,
+    offsetX: 0,
+    offsetY: 0
+  };
+  scenes.push(scene);
+  selectedSceneId = scene.id;
+  if (liveSceneId === null) {
+    liveSceneId = scene.id; // first scene added goes live automatically
+  }
+  renderSceneList();
+  syncToolbarFromSelected();
+}
+
+function getScene(id) { return scenes.find(s => s.id === id); }
+
+function removeScene(id) {
+  scenes = scenes.filter(s => s.id !== id);
+  if (liveSceneId === id) liveSceneId = scenes.length ? scenes[0].id : null;
+  if (selectedSceneId === id) selectedSceneId = liveSceneId;
+  renderSceneList();
+  syncToolbarFromSelected();
+}
+
+function setLive(id) {
+  liveSceneId = id;
+  selectedSceneId = id;
+  renderSceneList();
+  syncToolbarFromSelected();
+}
+
+// ---- rendering loop -------------------------------------------------------
+function drawScene(scene) {
+  ctx.save();
+  ctx.translate(WIDTH / 2 + scene.offsetX, HEIGHT / 2 + scene.offsetY);
+  ctx.rotate(scene.rotationDeg * Math.PI / 180);
+  const sx = (scene.flipH ? -1 : 1) * scene.fitScale * scene.scale;
+  const sy = (scene.flipV ? -1 : 1) * scene.fitScale * scene.scale;
+  ctx.scale(sx, sy);
+  ctx.drawImage(scene.img, -scene.img.width / 2, -scene.img.height / 2);
+  ctx.restore();
+}
+
+function renderLoop() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  const live = getScene(liveSceneId);
+  if (live) drawScene(live);
+  dropHint.style.display = scenes.length ? 'none' : 'flex';
+  requestAnimationFrame(renderLoop);
+}
+requestAnimationFrame(renderLoop);
+
+// ---- scene list UI ----------------------------------------------------
+function renderSceneList() {
+  sceneListEl.innerHTML = '';
+  scenes.forEach(scene => {
+    const div = document.createElement('div');
+    div.className = 'scene-thumb' +
+      (scene.id === liveSceneId ? ' live' : '') +
+      (scene.id === selectedSceneId ? ' selected' : '');
+
+    const imgEl = document.createElement('img');
+    imgEl.src = scene.img.src;
+    div.appendChild(imgEl);
+
+    if (scene.id === liveSceneId) {
+      const badge = document.createElement('div');
+      badge.className = 'badge';
+      badge.textContent = 'В ЭФИРЕ';
+      div.appendChild(badge);
+    }
+
+    const rm = document.createElement('button');
+    rm.className = 'remove';
+    rm.textContent = '×';
+    rm.onclick = (e) => { e.stopPropagation(); removeScene(scene.id); };
+    div.appendChild(rm);
+
+    const name = document.createElement('div');
+    name.className = 'name';
+    name.textContent = scene.name;
+    div.appendChild(name);
+
+    div.onclick = () => setLive(scene.id);
+
+    sceneListEl.appendChild(div);
+  });
+}
+
+// ---- adding images (file picker + drag&drop) ---------------------------
+function loadImageFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => addScene(img, file.name);
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+$('addSceneBtn').onclick = () => $('fileInput').click();
+$('fileInput').onchange = (e) => {
+  Array.from(e.target.files || []).forEach(loadImageFile);
+  e.target.value = '';
+};
+
+['dragenter', 'dragover'].forEach(evt =>
+  window.addEventListener(evt, (e) => { e.preventDefault(); })
+);
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const files = Array.from(e.dataTransfer.files || []).filter(f => f.type.startsWith('image/'));
+  files.forEach(loadImageFile);
+});
+
+// ---- transform toolbar --------------------------------------------------
+function withSelected(fn) {
+  const s = getScene(selectedSceneId);
+  if (!s) return;
+  fn(s);
+  syncToolbarFromSelected();
+}
+
+function syncToolbarFromSelected() {
+  const s = getScene(selectedSceneId);
+  $('rotSlider').value = s ? s.rotationDeg : 0;
+  $('scaleSlider').value = s ? Math.round(s.scale * 100) : 100;
+  renderSceneList();
+}
+
+function normalizeDeg(d) {
+  d = d % 360;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  return d;
+}
+$('rotL').onclick = () => withSelected(s => s.rotationDeg = normalizeDeg(s.rotationDeg - 90));
+$('rotR').onclick = () => withSelected(s => s.rotationDeg = normalizeDeg(s.rotationDeg + 90));
+$('flipH').onclick = () => withSelected(s => s.flipH = !s.flipH);
+$('flipV').onclick = () => withSelected(s => s.flipV = !s.flipV);
+$('resetTransform').onclick = () => withSelected(s => {
+  s.scale = 1; s.rotationDeg = 0; s.flipH = false; s.flipV = false; s.offsetX = 0; s.offsetY = 0;
+});
+$('rotSlider').oninput = (e) => withSelected(s => s.rotationDeg = Number(e.target.value));
+$('scaleSlider').oninput = (e) => withSelected(s => s.scale = Number(e.target.value) / 100);
+
+// drag-to-pan + wheel-to-zoom directly on the stage, acting on the
+// selected scene (which is also whatever is currently live, since
+// selecting = making live in this workflow).
+let dragging = false, dragStartX = 0, dragStartY = 0, dragOrigOffsetX = 0, dragOrigOffsetY = 0;
+stageWrap.addEventListener('mousedown', (e) => {
+  const s = getScene(selectedSceneId);
+  if (!s) return;
+  dragging = true;
+  stageWrap.classList.add('dragging');
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  dragOrigOffsetX = s.offsetX; dragOrigOffsetY = s.offsetY;
+});
+window.addEventListener('mousemove', (e) => {
+  if (!dragging) return;
+  const s = getScene(selectedSceneId);
+  if (!s) return;
+  const rect = stageWrap.getBoundingClientRect();
+  const scaleFactor = WIDTH / rect.width; // canvas px per CSS px
+  s.offsetX = dragOrigOffsetX + (e.clientX - dragStartX) * scaleFactor;
+  s.offsetY = dragOrigOffsetY + (e.clientY - dragStartY) * scaleFactor;
+});
+window.addEventListener('mouseup', () => { dragging = false; stageWrap.classList.remove('dragging'); });
+
+stageWrap.addEventListener('wheel', (e) => {
+  const s = getScene(selectedSceneId);
+  if (!s) return;
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.05 : 0.05;
+  s.scale = Math.max(0.1, Math.min(4, s.scale + delta));
+  syncToolbarFromSelected();
+}, { passive: false });
+
+// ---- WebRTC sender --------------------------------------------------------
+let ws = null;
+let pc = null;
+let outputStream = null;
+
+function setStatus(text, kind) {
+  statusEl.textContent = text;
+  statusEl.className = kind || '';
+}
+
+function iceServers() {
+  return [{ urls: 'stun:stun.l.google.com:19302' }];
+}
+
+function getOutputStream() {
+  if (!outputStream) outputStream = canvas.captureStream(30);
+  return outputStream;
+}
+
+function connect() {
+  const url = $('serverUrl').value.trim();
+  const room = $('roomId').value.trim();
+  if (!url || !room) { setStatus('Укажите сервер и код комнаты', 'err'); return; }
+
+  $('connectBtn').disabled = true;
+  setStatus('Соединяюсь...', 'warn');
+
+  ws = new WebSocket(url);
+  ws.onopen = () => ws.send(JSON.stringify({ type: 'join', room, role: 'sender' }));
+  ws.onclose = () => setStatus('Соединение с сервером закрыто', 'warn');
+  ws.onerror = () => setStatus('Ошибка WebSocket-соединения', 'err');
+
+  ws.onmessage = async (ev) => {
+    const msg = JSON.parse(ev.data);
+
+    if (msg.type === 'error') { setStatus('Сервер: ' + msg.message, 'err'); return; }
+
+    if (msg.type === 'joined') {
+      setStatus('В комнате «' + room + '». Ждём телефон...', 'warn');
+      $('disconnectBtn').disabled = false;
+      return;
+    }
+
+    if (msg.type === 'peer-joined') {
+      setStatus('Телефон подключился, устанавливаю канал...', 'warn');
+      await startPeerConnection();
+      return;
+    }
+
+    if (msg.type === 'peer-left') {
+      setStatus('Телефон отключился. Ждём переподключения...', 'warn');
+      if (pc) { pc.close(); pc = null; }
+      return;
+    }
+
+    if (msg.type === 'answer' && pc) {
+      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+      setStatus('Трансляция активна', 'ok');
+      return;
+    }
+
+    if (msg.type === 'ice-candidate' && pc && msg.candidate) {
+      try { await pc.addIceCandidate(msg.candidate); } catch (e) {}
+      return;
+    }
+  };
+}
+
+async function startPeerConnection() {
+  pc = new RTCPeerConnection({ iceServers: iceServers() });
+  getOutputStream().getTracks().forEach(track => pc.addTrack(track, outputStream));
+
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate) ws.send(JSON.stringify({ type: 'ice-candidate', candidate: ev.candidate }));
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'connected') setStatus('Трансляция активна', 'ok');
+    if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+      setStatus('Соединение потеряно (' + pc.connectionState + ')', 'err');
+    }
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  ws.send(JSON.stringify({ type: 'offer', sdp: offer }));
+}
+
+function disconnect() {
+  if (pc) { pc.close(); pc = null; }
+  if (ws) { ws.close(); ws = null; }
+  $('connectBtn').disabled = false;
+  $('disconnectBtn').disabled = true;
+  setStatus('не подключено');
+}
+
+$('connectBtn').onclick = connect;
+$('disconnectBtn').onclick = disconnect;
+</script>
+</body>
+</html>
