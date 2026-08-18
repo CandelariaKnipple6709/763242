@@ -10,19 +10,48 @@ let server = null;
 let mainWindow = null;
 let currentRoom = null;
 
-function getLocalIPv4() {
+function isLinkLocal(address) {
+  // 169.254.0.0/16 — Windows self-assigns these (APIPA) to adapters that
+  // aren't actually connected to anything (disabled NICs, unplugged
+  // Ethernet, some virtual adapters). They're never reachable from a
+  // phone, so must never be offered up for QR pairing.
+  return address.startsWith('169.254.');
+}
+
+function candidateInterfaces() {
   const ifaces = os.networkInterfaces();
+  const candidates = [];
   for (const name of Object.keys(ifaces)) {
     for (const iface of ifaces[name]) {
-      // Skip loopback and non-IPv4, and skip virtual adapters that are
-      // unlikely to be reachable from the phone (best-effort heuristic).
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
+      if (iface.family === 'IPv4' && !iface.internal && !isLinkLocal(iface.address)) {
+        candidates.push({ name, address: iface.address });
       }
     }
   }
-  return '127.0.0.1'; // fallback — QR pairing won't work off-device, but
-                       // the app still runs for local debugging.
+  return candidates;
+}
+
+function getLocalIPv4() {
+  const candidates = candidateInterfaces();
+  if (candidates.length === 0) {
+    return '127.0.0.1'; // fallback — QR pairing won't work off-device, but
+                         // the app still runs for local debugging.
+  }
+
+  // Prefer adapters that look like a real Wi-Fi/Ethernet connection over
+  // VPN/virtual/container adapters, which commonly show up alongside the
+  // real one and would otherwise win by being listed first.
+  const preferredNamePattern = /wi-?fi|wlan|ethernet|en0|eth0/i;
+  const preferred = candidates.find(c => preferredNamePattern.test(c.name));
+  if (preferred) return preferred.address;
+
+  // Otherwise avoid obviously-virtual adapters if any real-looking one
+  // exists among the remaining candidates.
+  const avoidPattern = /virtual|vmware|virtualbox|hyper-v|vethernet|tailscale|zerotier|loopback|docker|wsl/i;
+  const nonVirtual = candidates.find(c => !avoidPattern.test(c.name));
+  if (nonVirtual) return nonVirtual.address;
+
+  return candidates[0].address;
 }
 
 function randomRoom() {
