@@ -37,12 +37,22 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
 
     private let session = AVCaptureSession()
     private var didScan = false
+    private var previewLayer: AVCaptureVideoPreviewLayer?
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
         setUpCamera()
         setUpUI()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        // CALayer.autoresizingMask is unavailable on iOS (recent SDKs make
+        // this a hard compile error, not just a no-op), so the preview
+        // layer's frame has to be kept in sync manually on every layout
+        // pass (rotation, safe area changes, etc.) instead.
+        previewLayer?.frame = view.bounds
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -83,8 +93,8 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
         let preview = AVCaptureVideoPreviewLayer(session: session)
         preview.videoGravity = .resizeAspectFill
         preview.frame = view.bounds
-        preview.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
         view.layer.insertSublayer(preview, at: 0)
+        previewLayer = preview
     }
 
     private func setUpUI() {
