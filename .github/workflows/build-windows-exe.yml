@@ -1,0 +1,42 @@
+# Builds the CamSwap Studio Windows installer (.exe) on a free
+# GitHub-hosted Windows runner via electron-builder.
+
+name: Build Windows .exe
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - "windows-studio/**"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: windows-studio
+        run: npm install
+
+      - name: Build installer
+        working-directory: windows-studio
+        run: npx electron-builder --win --publish=never
+
+      - name: Show dist output (debug aid)
+        working-directory: windows-studio
+        run: dir dist
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CamSwapStudio-installer
+          path: |
+            windows-studio/dist/*.exe
+          retention-days: 14
