@@ -1,0 +1,72 @@
+# Builds an unsigned CamSwap.ipa on a free GitHub-hosted macOS runner,
+# so you never need to own or rent a Mac. Sideloadly signs the app
+# itself at install time using your Apple ID, so an *unsigned* .ipa
+# is exactly what it expects.
+
+name: Build iOS .ipa
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - "ios-app/**"
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Generate Xcode project
+        working-directory: ios-app
+        run: xcodegen generate
+
+      - name: Show available schemes (debug aid)
+        working-directory: ios-app
+        run: xcodebuild -list -project CamSwap.xcodeproj
+
+      - name: Archive (unsigned)
+        working-directory: ios-app
+        run: |
+          xcodebuild archive \
+            -project CamSwap.xcodeproj \
+            -scheme CamSwap \
+            -configuration Release \
+            -archivePath "$PWD/build/CamSwap.xcarchive" \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            ONLY_ACTIVE_ARCH=NO
+
+      - name: Package .ipa
+        working-directory: ios-app
+        run: |
+          set -e
+          APP_PATH="build/CamSwap.xcarchive/Products/Applications/CamSwap.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Build product not found at $APP_PATH"
+            find build -maxdepth 4
+            exit 1
+          fi
+          mkdir -p ipa_root/Payload
+          cp -r "$APP_PATH" ipa_root/Payload/
+          cd ipa_root
+          zip -r ../CamSwap.ipa Payload
+          cd ..
+
+      - name: Upload .ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CamSwap-ipa
+          path: ios-app/CamSwap.ipa
+          retention-days: 14
